@@ -45,11 +45,6 @@ def best_fit_linear(data, time, get_params=False):
     else:
         return lin_trend, label
 
-
-# Forecasting
-def ARIMA(data, p, d, q):
-    label = "ARIMA"
-
 # Other
 def func_dev_upper(data, length, function_data, scaling_factor=1):
     '''
