@@ -20,7 +20,7 @@ def pathmaker_absolute(filepath, filename):
 ### CSV File
 def create_csv(filepath, name):
     filepath = re.sub(r'\\', r'\/', filepath)
-    fullfilename = os.path.join(filepath, name + ".csv")
+    fullfilename = os.path.join(filepath, name)
     BuySellData = pd.DataFrame(columns=['Timestamp', 'Buy_Prices', 'Sell_Prices', 'Buy_amount', 'Sell_amount', 'fee', 'cumulative_spent', 'cumulative_sold', 'num_owned', 'current_profit'])
     BuySellData.loc[len(BuySellData)] = ([np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, 0.0, 0.0, 0.0, 0.0])
     BuySellData.to_csv(fullfilename, index=False)
@@ -87,35 +87,45 @@ def SMA_strategy(data, csv_file, budget=1000000.0, amount=1, buyfee=0, sellfee=0
     threshold_absolute: bool, sets whether threshold is absolute or relative to current price (default=True)
     act: bool, sets whether to act on a Buy/Sell signal or just add to a list
     '''
-    Time = data[0]
-    Price = data[1]
+    Time = np.array(data[0])
+    Price = np.array(data[1])
 
     BuySellData = pd.DataFrame(pd.read_csv(csv_file, header=0))
     num_owned = BuySellData.loc[len(BuySellData)-1, 'num_owned']
     Buy_Prices = np.array(BuySellData['Buy_Prices'][~np.isnan(BuySellData['Buy_Prices'])])
     # Sell_Prices = np.array(BuySellData['Sell_Prices'][~np.isnan(BuySellData['Sell_Prices'])])
-    last_buy = Buy_Prices[-1]
+    if len(Buy_Prices) == 0:
+        last_buy = 10*10
+    else:
+        last_buy = Buy_Prices[-1]
 
     if threshold_absolute==False:
         threshold = threshold * Price[-1]
     if max_loss_absolute==False:
         max_loss = max_loss * last_buy
     
-    net_spent = np.sum(BuySellData['cumulative_sold'] - BuySellData.loc['cumulative_spent'])
+    net_spent = np.sum(BuySellData['cumulative_sold'] - BuySellData['cumulative_spent'])
     if net_spent >= 0:
         budget_remaining = budget
     else:
         budget_remaining = budget - net_spent
 
     ### Strategy
-    SMA = ta.sma(Price, length=window)
+    df_Price = pd.DataFrame(Price)
+    SMA = np.array(ta.sma(df_Price.iloc[:,0], length=window))
 
     check = 0 # Check to prevent multiple buys without crossing over threshold
     
-    if (check==1) and (SMA[-1] < Price[-1]):
-        check = 0
-    if (check==-1) and (SMA[-1] > Price[-1]):
-        check = 0
+    for p in range(len(Price)-window):
+        i = p+window-1
+        if (SMA[i] > (Price[i]+threshold)):
+            check = 1
+        if (SMA[i] < (Price[i]+threshold)):
+            check = -1
+        if (check==1) and (SMA[i] < Price[i]):
+            check = 0
+        if (check==-1) and (SMA[i] > Price[i]):
+            check = 0
 
     if ((Price[-1] + buyfee) <= budget_remaining) and (check!=1) and (SMA[-1] > (Price[-1]+threshold)):
         Buy(csv_file, Price[-1], Time[-1], amount, buyfee, fee_absolute, api, act)
