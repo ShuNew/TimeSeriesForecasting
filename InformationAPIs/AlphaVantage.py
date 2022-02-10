@@ -19,20 +19,29 @@ def pathmaker(filename):
 api_file = pathmaker("AlphaVantage_apikey.txt")
 apikey = np.loadtxt(api_file, dtype=str)
 
-def getData(query_switch, function, symbol, interval, *optionalparams):
+def getData(query_switch, function, symbol, *optionalparams):
     '''
     ### Get data using AlphaVantage API
     # requires an API key in a text file "AlphaVantage_apikey.txt" located in the same directory as "AlphaVantage.py"
     query_switch: bool, if True then query AlphaVantage and save .csv file, if False then read saved .csv file
     (function, symbol, interval, *optionalparams): see AlphaVantage documentation
     '''
-    file_name = str(function)+'-'+str(symbol)+'-'+str(interval)+'.csv'
+    if optionalparams:
+        op_name = ''
+        for param in optionalparams:
+            op_name += '-' + str(param)
+        file_name = str(function)+'-'+str(symbol)+op_name+'.csv'
+    else:
+        file_name = str(function)+'-'+str(symbol)+'.csv'
     fullfilename = pathmaker(file_name)
     if query_switch == True:
         if optionalparams:
-            url = 'https://www.alphavantage.co/query?'+'function='+str(function)+'&'+'symbol='+str(symbol)+'&'+'interval='+str(interval)+str(optionalparams[0])+'&'+'apikey='+str(apikey)+'&datatype=csv'
+            op_param = ''
+            for param in optionalparams:
+                op_param += '&' + str(param)
+            url = 'https://www.alphavantage.co/query?'+'function='+str(function)+'&'+'symbol='+str(symbol)+op_param+'&'+'apikey='+str(apikey)+'&datatype=csv'
         else:
-            url = 'https://www.alphavantage.co/query?'+'function='+str(function)+'&'+'symbol='+str(symbol)+'&'+'interval='+str(interval)+'&'+'apikey='+str(apikey)+'&datatype=csv'
+            url = 'https://www.alphavantage.co/query?'+'function='+str(function)+'&'+'symbol='+str(symbol)+'&'+'apikey='+str(apikey)+'&datatype=csv'
         data = pd.read_csv(url)
         data.to_csv(fullfilename, index=False)
     if query_switch == False:
