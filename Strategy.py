@@ -43,7 +43,7 @@ def Buy(csv_file, price, datetime, amount=1, fee=0, fee_absolute=True, api=None,
     else:
         BuySellData.loc[len(BuySellData)-1,'cumulative_spent'] = BuySellData.loc[len(BuySellData)-2,'cumulative_spent'] + amount*price + fee
 
-    BuySellData.loc[len(BuySellData)-1,'current_profit'] = np.sum(BuySellData['cumulative_sold'] - BuySellData['cumulative_spent']) + price * BuySellData.loc[len(BuySellData)-1,'num_owned']
+    BuySellData.loc[len(BuySellData)-1,'current_profit'] = BuySellData.loc[len(BuySellData)-1,'cumulative_sold'] - BuySellData.loc[len(BuySellData)-1,'cumulative_spent'] + price * BuySellData.loc[len(BuySellData)-1,'num_owned']
 
     BuySellData.to_csv(csv_file, index=False)
     return
@@ -66,7 +66,7 @@ def Sell(csv_file, price, datetime, amount=1, fee=0, fee_absolute=True, api=None
         BuySellData.loc[len(BuySellData)-1,'cumulative_spent'] = BuySellData.loc[len(BuySellData)-2,'cumulative_spent'] + fee
         BuySellData.loc[len(BuySellData)-1,'cumulative_sold'] = BuySellData.loc[len(BuySellData)-2,'cumulative_sold'] + amount*price + fee
 
-    BuySellData.loc[len(BuySellData)-1,'current_profit'] = np.sum(BuySellData['cumulative_sold'] - BuySellData['cumulative_spent']) + price * BuySellData.loc[len(BuySellData)-1,'num_owned']
+    BuySellData.loc[len(BuySellData)-1,'current_profit'] = BuySellData.loc[len(BuySellData)-1,'cumulative_sold'] - BuySellData.loc[len(BuySellData)-1,'cumulative_spent'] + price * BuySellData.loc[len(BuySellData)-1,'num_owned']
 
     BuySellData.to_csv(csv_file, index=False)
     return
