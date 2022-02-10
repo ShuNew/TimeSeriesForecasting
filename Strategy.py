@@ -35,8 +35,8 @@ def Buy(csv_file, price, datetime, amount=1, fee=0, fee_absolute=True, api=None,
         pass
     
     BuySellData = pd.DataFrame(pd.read_csv(csv_file, header=0))
-    BuySellData.loc[len(BuySellData)] = ([datetime, price, np.NaN, amount, np.NaN, fee, np.NaN,\
-                                        (BuySellData.loc[len(BuySellData)-1,'cumulative_sold']), (BuySellData.loc[len(BuySellData)-1,'num_owned'] + amount), np.NaN])
+    BuySellData.loc[len(BuySellData)] = ([datetime, price, np.NaN, amount, np.NaN, fee,\
+                                        np.NaN, (BuySellData.loc[len(BuySellData)-1,'cumulative_sold']), (BuySellData.loc[len(BuySellData)-1,'num_owned'] + amount), np.NaN])
 
     if fee_absolute==False:
         BuySellData.loc[len(BuySellData)-1,'cumulative_spent'] = BuySellData.loc[len(BuySellData)-2,'cumulative_spent'] + amount*price*(1+fee)
@@ -56,15 +56,16 @@ def Sell(csv_file, price, datetime, amount=1, fee=0, fee_absolute=True, api=None
         pass
 
     BuySellData = pd.DataFrame(pd.read_csv(csv_file, header=0))
-    BuySellData.loc[len(BuySellData)] = ([datetime, np.NaN, price, np.NaN, amount, 0,\
+    BuySellData.loc[len(BuySellData)] = ([datetime, np.NaN, price, np.NaN, amount, fee,\
                                         np.NaN, np.NaN, (BuySellData.loc[len(BuySellData)-1,'num_owned'] - amount), np.NaN])
 
     if fee_absolute==False:
         BuySellData.loc[len(BuySellData)-1,'cumulative_spent'] = BuySellData.loc[len(BuySellData)-2,'cumulative_spent'] + amount*price*fee
+        BuySellData.loc[len(BuySellData)-1,'cumulative_sold'] = BuySellData.loc[len(BuySellData)-2,'cumulative_sold'] + amount*price*(1+fee)
     else:
         BuySellData.loc[len(BuySellData)-1,'cumulative_spent'] = BuySellData.loc[len(BuySellData)-2,'cumulative_spent'] + fee
+        BuySellData.loc[len(BuySellData)-1,'cumulative_sold'] = BuySellData.loc[len(BuySellData)-2,'cumulative_sold'] + amount*price + fee
 
-    BuySellData.loc[len(BuySellData)-1,'cumulative_sold'] = BuySellData.loc[len(BuySellData)-2,'cumulative_sold'] + amount*price + fee
     BuySellData.loc[len(BuySellData)-1,'current_profit'] = np.sum(BuySellData['cumulative_sold'] - BuySellData['cumulative_spent']) + price * BuySellData.loc[len(BuySellData)-1,'num_owned']
 
     BuySellData.to_csv(csv_file, index=False)
@@ -132,9 +133,9 @@ def SMA_strategy(data, csv_file, budget=1000000.0, amount=1, buyfee=0, sellfee=0
 
     if num_owned > 0:
         if Price[-1] <= max_loss:
-            Sell(csv_file, Price[-1], Time[-1], sellfee, fee_absolute, api, act)
+            Sell(csv_file, Price[-1], Time[-1], amount, sellfee, fee_absolute, api, act)
         if (check!=-1) and (SMA[-1] < (Price[-1]-threshold)):
-            Sell(csv_file, Price[-1], Time[-1], sellfee, fee_absolute, api, act)
+            Sell(csv_file, Price[-1], Time[-1], amount, sellfee, fee_absolute, api, act)
     
     return
 
