@@ -108,10 +108,7 @@ def SMA_strategy(data, csv_file, budget=1000000.0, buyamount=1, sellamount="all"
         max_loss = max_loss * last_buy
     
     net_spent = np.sum(BuySellData['cumulative_sold'] - BuySellData['cumulative_spent'])
-    if net_spent >= 0:
-        budget_remaining = budget
-    else:
-        budget_remaining = budget - net_spent
+    budget_remaining = min(budget, (budget - net_spent))
 
     if buyamount == "max":
         buyamount = np.floor(budget_remaining/Price[-1])
