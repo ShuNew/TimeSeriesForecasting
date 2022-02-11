@@ -72,13 +72,14 @@ def Sell(csv_file, price, datetime, amount=1, fee=0, fee_absolute=True, api=None
     return
 
 ### Sample Strategies
-def SMA_strategy(data, csv_file, budget=1000000.0, amount=1, buyfee=0, sellfee=0, api=None, window=10, max_loss=1, threshold=0, fee_absolute=True, max_loss_absolute=False, threshold_absolute=True, act=False):
+def SMA_strategy(data, csv_file, budget=1000000.0, buyamount=1, sellamount="all", buyfee=0, sellfee=0, api=None, window=10, max_loss=1, threshold=0, fee_absolute=True, max_loss_absolute=False, threshold_absolute=True, act=False):
     '''
     ### Buy if SMA crosses (data + threshold), Sell if MA crosses (data + threshold)
     data: 2-D array, [timestamps, y-data] [datetime, floats]
     csv_file: filepath (str), filepath (including file name) for Buy/Sell data
     budget: float, total budget in given currency
-    amount: float, how much of a given security to buy
+    buyamount: float or "max", how much of a given security to buy
+    sellamount: float or "all", how much of a given security to sell
     buyfee: float, fee per buy in given currency
     sellfee: float, fee per sale in given currency
     window: odd int >=3, length of filter window
@@ -95,6 +96,7 @@ def SMA_strategy(data, csv_file, budget=1000000.0, amount=1, buyfee=0, sellfee=0
     num_owned = BuySellData.loc[len(BuySellData)-1, 'num_owned']
     Buy_Prices = np.array(BuySellData['Buy_Prices'][~np.isnan(BuySellData['Buy_Prices'])])
     # Sell_Prices = np.array(BuySellData['Sell_Prices'][~np.isnan(BuySellData['Sell_Prices'])])
+
     if len(Buy_Prices) == 0:
         last_buy = 10*10
     else:
@@ -110,6 +112,12 @@ def SMA_strategy(data, csv_file, budget=1000000.0, amount=1, buyfee=0, sellfee=0
         budget_remaining = budget
     else:
         budget_remaining = budget - net_spent
+
+    if buyamount == "max":
+        buyamount = np.floor(budget_remaining/Price[-1])
+        
+    if sellamount == "all":
+        sellamount = num_owned
 
     ### Strategy
     df_Price = pd.DataFrame(Price)
@@ -129,13 +137,13 @@ def SMA_strategy(data, csv_file, budget=1000000.0, amount=1, buyfee=0, sellfee=0
             check = 0
 
     if ((Price[-1] + buyfee) <= budget_remaining) and (check!=1) and (SMA[-1] > (Price[-1]+threshold)):
-        Buy(csv_file, Price[-1], Time[-1], amount, buyfee, fee_absolute, api, act)
+        Buy(csv_file, Price[-1], Time[-1], buyamount, buyfee, fee_absolute, api, act)
 
     if num_owned > 0:
-        if Price[-1] <= max_loss:
-            Sell(csv_file, Price[-1], Time[-1], amount, sellfee, fee_absolute, api, act)
-        if (check!=-1) and (SMA[-1] < (Price[-1]-threshold)):
-            Sell(csv_file, Price[-1], Time[-1], amount, sellfee, fee_absolute, api, act)
+        if Price[-1] <= (last_buy - max_loss):
+            Sell(csv_file, Price[-1], Time[-1], sellamount, sellfee, fee_absolute, api, act)
+        elif (check!=-1) and (SMA[-1] < (Price[-1]-threshold)):
+            Sell(csv_file, Price[-1], Time[-1], sellamount, sellfee, fee_absolute, api, act)
     
     return
 
