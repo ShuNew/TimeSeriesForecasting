@@ -73,3 +73,17 @@ def getDataGeneral(query_switch, file, function, symbol, *optionalparams):
     data = data.sort_values(by="timestamp")
     data = data.reset_index(drop=True)
     return(data)
+
+def getActiveList(query_switch):
+    '''
+    ### Get list of all currently active stocks and ETFs
+    query_switch: bool, if True then query AlphaVantage and save .csv file, if False then read saved .csv file
+    '''
+    fullfilename = pathmaker("Active_Stocks.csv")
+    if query_switch == True:
+        url = "https://www.alphavantage.co/query?function=LISTING_STATUS&apikey="+str(apikey)+'&datatype=csv'
+        data = pd.read_csv(url)
+        data.to_csv(fullfilename, index=False)
+    else:
+        data = pd.DataFrame(pd.read_csv(fullfilename))
+    return data
