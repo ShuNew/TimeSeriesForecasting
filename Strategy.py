@@ -78,7 +78,7 @@ def SMA_strategy(data, csv_file, budget=1000000.0, buyamount=1, sellamount="all"
     data: 2-D array, [timestamps, y-data] [datetime, floats]
     csv_file: filepath (str), filepath (including file name) for Buy/Sell data
     budget: float, total budget in given currency
-    buyamount: float or "max", how much of a given security to buy
+    buyamount: float, "max_int", or "max", how much of a given security to buy
     sellamount: float or "all", how much of a given security to sell
     buyfee: float, fee per buy in given currency
     sellfee: float, fee per sale in given currency
@@ -110,8 +110,11 @@ def SMA_strategy(data, csv_file, budget=1000000.0, buyamount=1, sellamount="all"
     net_spent = np.sum(BuySellData['cumulative_sold'] - BuySellData['cumulative_spent'])
     budget_remaining = min(budget, (budget - net_spent))
 
-    if buyamount == "max":
+    if buyamount == "max_int":
         buyamount = np.floor(budget_remaining/Price[-1])
+    
+    elif buyamount == "max":
+        buyamount = budget_remaining/Price[-1]
         
     if sellamount == "all":
         sellamount = num_owned
