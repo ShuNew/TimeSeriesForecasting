@@ -1,7 +1,11 @@
+from datetime import datetime
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
 import pandas as pd
+import matplotlib.ticker as ticker
+import warnings
+warnings.filterwarnings('ignore')
 
 # Datetime format
 dt_format = '%Y-%m-%d %H:%M:%S'
@@ -17,64 +21,61 @@ def lineplotter(PriceData, columns, time_column="timestamp", title="Price Plot",
     '''
     ### PriceData: pandas DataFrame, at least one column must be time
 
-    columns: list of strings, names of columns to plot
+    columns: list of strings, names of columns to plot (NOT including time_column)
     time_column: string, name of time column
     title: string, title of plot
     split: bool, if True: show functions on separate subplots, if False: show functions on same plot (default: False)
     start: datetime object, start date/time of plot (default: show all)
     start: datetime object, end date/time of plot (default: show all)
-    (optional) functions: 1-D array or list, function data to plot
-
-    ### Additional Notes: each function in "functions" should be a tuple of form (data, label)
+    (optional) functions: 2-tuple (1D list, str), function data and labels to plot 
+    # Additional Notes: each function in "functions" should be a tuple of form (data, label)
     '''
-    time = PriceData[time_column]
-    myFmt = mdates.DateFormatter(dt_format)
+    PriceData = pd.DataFrame(PriceData)
 
-    n = 0 # axis/color index
+    columns.insert(0, time_column)
 
-    if split==False:
-        fig, ax = plt.subplots()
+    df = PriceData[columns]
+    if functions != None:
+        for function in functions:
+            func_data, label = function
+            df[label] = func_data
 
-        for col in columns:
-            ax.plot(time, PriceData[str(col)], label=str(col), color=color_list[n])
-            n += 1
-        
-        if functions != None:
-            for function in functions:
-                func_data, label = function
-                ax.plot(time, func_data, label=str(label), color=color_list[n])
-                n += 1
-        ax.legend()
+    colors = color_list[:len(df.columns)]
     
     if split==True:
-        col_rows = len(columns)
-        func_rows = len(functions)
-        fig, ax = plt.subplots(nrows=col_rows+func_rows, sharex=True)
+        subplot_param = True
+    else:
+        subplot_param = False
+    
+    if any(char.isdigit() for char in start):
+        starttime = pd.to_datetime(start)
+    else:
+       starttime = pd.to_datetime(min(df[time_column]))
 
-        for col in columns:
-            ax[n].plot(time, PriceData[str(col)], label=str(col), color=color_list[n])
-            ax[n].legend()
-            n += 1
+    if any(char.isdigit() for char in end):
+        endtime = pd.to_datetime(end)
+    else:
+        endtime = pd.to_datetime(max(df[time_column]))
 
-        if functions:
-            for function in functions:
-                func_data, label = function
-                ax[n].plot(time, func_data, label=str(label), color=color_list[n])
-                ax[n].legend()
-                n += 1
+    df[time_column] = pd.to_datetime(df[time_column])
+    df_time = df.set_index(time_column)
+
+    start_index = df.loc[df.index.unique()[df_time.index.unique().get_loc(starttime, method='nearest')]].name
+    end_index = df.loc[df.index.unique()[df_time.index.unique().get_loc(endtime, method='nearest')]].name
+
+    if(start_index > end_index):
+        start_copy = np.copy(start_index)
+        start_index = end_index
+        end_index = start_copy
+
+    plot_df = df.iloc[start_index:end_index+1]
+
+    ax = plot_df.plot(title=title, subplots=subplot_param, x=time_column, y=df.columns.tolist()[1:], color=colors)
         
-        ax[0].xaxis.set_major_formatter(myFmt)
-
-    fig.autofmt_xdate()
-
-    fig.suptitle(title)
-    plt.xlabel("Time Stamp (YYYY-MM-DD hh:mm:ss)")
+    # ax.set_xticklabels([pandas_datetime.strftime(dt_format) for pandas_datetime in plot_df[time_column]])
+    plt.gcf().autofmt_xdate()
+    plt.xlabel("Time Stamp")
     plt.ylabel("Price ($)")
-
-    if not isinstance(start, str):
-        plt.xlim(left=start)
-    if not isinstance(end, str):
-        plt.xlim(right=end)
 
     plt.show()
 
@@ -83,3 +84,21 @@ def barplotter_time(PriceData, name, column):
 
 def barplotter_frequency(PriceData, name, column):
     pass
+
+# df = pd.DataFrame()
+# date_df = pd.DataFrame({
+#              'year': [2022]*50,
+#              'month': [1]*50,
+#              'day': [1]*50,
+#              'hour': [0]*50,
+#              'minute': [0]*50,
+#              'second': np.arange(0, 50, 1)
+#             })
+# date_df.loc[len(date_df)] = [2022,1,1,0,0,49]
+
+# df['time'] = pd.to_datetime(date_df)
+# df['b'] = np.random.rand(51)
+
+# print(df)
+
+# lineplotter(df, ['b'], 'time')
