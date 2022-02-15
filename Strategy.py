@@ -72,12 +72,13 @@ def Sell(csv_file, price, datetime, amount=1, fee=0, fee_absolute=True, api=None
     return
 
 ### Sample Strategies
-def SMA_strategy(data, csv_file, budget=1000000.0, buyamount=1, sellamount="all", buyfee=0, sellfee=0, api=None, window=10, max_loss=1, threshold=0, fee_absolute=True, max_loss_absolute=False, threshold_absolute=True, act=False):
+def SMA_strategy(data, csv_file, budget=1000000.0, dynamic_budget_alloc=1, buyamount=1, sellamount="all", buyfee=0, sellfee=0, api=None, window=10, max_loss=1, threshold=0, fee_absolute=True, max_loss_absolute=False, threshold_absolute=True, act=False):
     '''
     ### Buy if SMA crosses (data + threshold), Sell if MA crosses (data + threshold)
     data: 2-D array, [timestamps, y-data] [datetime, floats]
     csv_file: filepath (str), filepath (including file name) for Buy/Sell data
     budget: float, total budget in given currency
+    dynamic_budget_alloc, None or float, how much of surplus profit to allocate to increase budget
     buyamount: float, "max_int", or "max", how much of a given security to buy
     sellamount: float or "all", how much of a given security to sell
     buyfee: float, fee per buy in given currency
@@ -94,9 +95,9 @@ def SMA_strategy(data, csv_file, budget=1000000.0, buyamount=1, sellamount="all"
 
     BuySellData = pd.DataFrame(pd.read_csv(csv_file, header=0))
     num_owned = BuySellData.loc[len(BuySellData)-1, 'num_owned']
+    surplus_profit = BuySellData.loc[len(BuySellData)-1, 'cumulative_sold'] - BuySellData.loc[len(BuySellData)-1, 'cumulative_spent']
     Buy_Prices = np.array(BuySellData['Buy_Prices'][~np.isnan(BuySellData['Buy_Prices'])])
     # Sell_Prices = np.array(BuySellData['Sell_Prices'][~np.isnan(BuySellData['Sell_Prices'])])
-
     if len(Buy_Prices) == 0:
         last_buy = 10*10
     else:
@@ -106,9 +107,13 @@ def SMA_strategy(data, csv_file, budget=1000000.0, buyamount=1, sellamount="all"
         threshold = threshold * Price[-1]
     if max_loss_absolute==False:
         max_loss = max_loss * last_buy
-    
-    net_spent = np.sum(BuySellData['cumulative_sold'] - BuySellData['cumulative_spent'])
-    budget_remaining = min(budget, (budget - net_spent))
+
+    if dynamic_budget_alloc == None:
+        budget_remaining = min(budget, (budget + surplus_profit))
+    elif surplus_profit <= 0:
+        budget_remaining = budget + surplus_profit
+    elif surplus_profit > 0:
+        budget_remaining = budget + dynamic_budget_alloc*surplus_profit
 
     if buyamount == "max_int":
         buyamount = np.floor(budget_remaining/Price[-1])
