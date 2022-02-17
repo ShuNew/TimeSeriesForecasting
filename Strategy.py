@@ -6,6 +6,8 @@ import datetime
 import scipy.signal
 import re
 import os
+import itertools
+from collections import deque
 
 ### Filepath Maker
 def pathmaker(filename):
@@ -155,3 +157,44 @@ def SMA_strategy(data, csv_file, budget=1000000.0, dynamic_budget_alloc=1, buyam
 ### My Strategies
 def my_strategy(*args):
     pass
+
+### Optimization
+def countable_param_optimizer(data, params_to_optimize, min_list, max_list, step_list, function, other_function_params=None):
+    '''
+    ### Finds optimal values for parameters with countably (and finitely) many values to maximize profit for the given data
+    data: depends on function, usually 2D array of format (Time, Price), data to optimize for
+    params_to_optimize: 1D list, list of parameters to optimize
+    min_list: 1D list, list of minimum values for parameters
+    max_list: 1D list, list of maximum values for parameters
+    step_list: 1D list, list of step sizes for parameters
+    function: function, function to optimize for (no parameters, only function name)
+    other_function_params: dict, dict of function parameters that are NOT being optimized
+    # Note: this optimizes by "brute force", trying every possible combination of values,
+            thus it is recommended to not optimize too many parameters at once or use very large datasets
+    '''
+    param_value_list = []
+    for p in range(len(params_to_optimize)):
+        param_value_list.append(np.arange(min_list[p], max_list[p]+step_list[p], step_list[p]))
+    
+    par_iterator = itertools.product(*param_value_list)
+    profit_list = []
+    for par in par_iterator:
+        create_csv(pathmaker(""), "param_optimizer_temp.csv")
+        file=pathmaker("param_optimizer_temp.csv")
+        par_dict = dict(zip(params_to_optimize, par))
+        function(data=data, csv_file=file, budget=10**10, *other_function_params)
+        with open(file, 'r') as f:
+            last_line = deque(f, 1)
+            last_line = last_line.split(",")
+        profit_list.append(float(last_line[-1]))
+    
+    profit_list = np.array(profit_list)
+    max_val = np.max(profit_list)
+    best_vals = np.where(profit_list == max_val)[0]
+
+    par_list = list(par_iterator)
+    best_param_list = []
+    for val in best_vals:
+        best_param_list.append(par_list[val])
+    
+    return best_param_list, params_to_optimize
