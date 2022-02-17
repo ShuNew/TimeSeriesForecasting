@@ -5,6 +5,94 @@ import scipy.signal
 from scipy.optimize import curve_fit 
 import statsmodels.api as sm
 
+# NaN Handling
+def nan_remover(data):
+    '''
+    ### Removes non-numeric values from list or array of numbers
+    data: 1-D list or array, data to remove non-numeric values from
+    # Outputs: (nan_index_list, NaNfree_list)
+    # Note: make sure to use nan_replacer() to replace NaN values when finished
+    '''
+    data = pd.DataFrame(data)
+    NaNified_list = np.array(data.apply(pd.to_numeric, errors='coerce').iloc[:,0])
+    try:
+        nan_index_list = np.where(np.isnan(NaNified_list)==True)[0]
+    except:
+        nan_index_list = []
+    if len(nan_index_list) >= 1:
+        NaNfree_list = np.delete(NaNified_list, nan_index_list)
+    else:
+        NaNfree_list = NaNified_list
+    return NaNfree_list, nan_index_list
+
+def nan_replacer(data, nan_index_list):
+    '''
+    ### Adds back NaN values to list or array of numbers
+    data: 1-D list or array, data to add NaN values to
+    '''
+    if len(nan_index_list) >= 1:
+        nan_arr = [np.NaN] * len(nan_index_list)
+        data = np.insert(data, nan_index_list, nan_arr)
+    return data
+
+# Math
+def nth_difference(data, n):
+    '''
+    ### Finds nth difference of data
+    data: list or 1-D array, y-data
+    n: int, number of times to difference data
+    # Note: to find nth time derivative, simply divide by (dt)^n
+    '''
+    current_diff = np.array(data)
+    for i in range(n):
+        current_diff = np.diff(current_diff)
+
+    nan_num = len(data) - len(current_diff)
+    nan_arr = [np.NaN] * nan_num
+
+    current_diff = np.concatenate([nan_arr, current_diff])
+
+    return current_diff
+
+def round_nth_decimal(data, n=0, roundtype="down"):
+    '''
+    ### Round number or array to nth decimal
+    n: int, number of decimal points to round to
+    roundtype: str, "nearest" or "up" or "down"
+    '''
+    if hasattr(data, '__len__') and (not isinstance(data, str)):
+        data = np.array(data)
+    if roundtype=="nearest":
+        data = np.round(data, n)
+    else:
+        data = data * 10**n
+        if roundtype=="up":
+            data = np.ceil(data)
+        elif roundtype=="down":
+            data = np.floor(data)
+        data = data * 10**(-n)
+    return data
+
+def round_to_increment(data, increment=1, roundtype="down"):
+    '''
+    ### Round number or array to nearest increment
+    n: int, number of decimal points to round to
+    roundtype: str, "nearest" or "up" or "down"
+    '''
+    if hasattr(data, '__len__') and (not isinstance(data, str)):
+        data = np.array(data)
+    
+    data = data/increment
+    if roundtype=="nearest":
+        data = np.round(data, 0)
+    if roundtype=="up":
+        data = np.ceil(data)
+    elif roundtype=="down":
+        data = np.floor(data)
+    data = data*increment
+
+    return data
+
 # Averages & interpolation
 #**************************** These are not necessary, use the pandas-ta package instead **********************************#
 def SMA(data, window):
@@ -23,58 +111,7 @@ def SMA(data, window):
             m_avg.append(avg)
     return m_avg
 
-# Other
-def func_dev_upper(data, window, function_data, scaling_factor=1):
-    '''
-    ### Pseudo Upper Bollinger Band
-    # Uses rolling_RMSD function
-    data: list or 1-D array, y-data (floats)
-    window: int, number of points to average over
-    function_data: 1-D array or list, function data to plot (floats)
-    scaling_factor: float, scaling factor for band (default=1)
-    '''
-    function_data = np.array(function_data)
-    moving_dev = np.array(rolling_RMSD(data, window, function_data))
-    diff = abs(len(moving_dev) - len(function_data))
 
-    if len(function_data) < len(moving_dev):
-        moving_dev = moving_dev[diff:]
-    elif len(function_data) > len(moving_dev):
-        function_data = function_data[diff:]
-
-    FDU = function_data + scaling_factor * moving_dev
-    if diff > 0:
-        none_list = [np.NaN] * diff
-        FDU = np.concatenate((none_list, FDU))
-
-    return FDU
-
-def func_dev_lower(data, window, function_data, scaling_factor=1):
-    '''
-    ### Pseudo Lower Bollinger Band
-    # Uses rolling_RMSD function
-    data: list or 1-D array, y-data (floats)
-    window: int, number of points to average over
-    function_data: 1-D array or list, function data to plot (floats)
-    scaling_factor: float, scaling factor for band (default=1)
-    '''
-    function_data = np.array(function_data)
-    moving_dev = np.array(rolling_RMSD(data, window, function_data))
-    diff = abs(len(moving_dev) - len(function_data))
-
-    if len(function_data) < len(moving_dev):
-        moving_dev = moving_dev[diff:]
-    elif len(function_data) > len(moving_dev):
-        function_data = function_data[diff:]
-
-    FDL = function_data - scaling_factor * moving_dev
-    if diff > 0:
-        none_list = [np.NaN] * diff
-        FDL = np.concatenate((none_list, FDL))
-        
-    return FDL
-    
-### non-labelled functions
 # Curve Fits
 def best_fit_linear(data, time, get_params=False):
     '''
@@ -164,12 +201,13 @@ def savgol(data, window=11, max_poly_deg=5, rmsd_threshold=0.02, threshold_absol
     # Instead of specifying order of polynomial, specify max RMSD within window
     data: list or 1-D array, y-data (floats)
     window: odd int >=3, length of filter window
-    max_poly_deg: int, max size of polynomial to fit
+    max_poly_deg: int, max degree of polynomial to fit
     rmsd_threshold: float, maximum RMSD from filtered data, absolute value or relative to data size (default=0.02)
     threshold_absolute: bool, sets whether rmsd_threshold is absolute or relative (default=False)
     # Note: if max_poly_deg is too large the function might break (recommend <= 15)
     # Personal Note: This is generally better than MA because it does not have a time lag
     '''
+    data, nan_index_list = nan_remover(data)
     data = np.array(data)
 
     poly_deg = min(window-1, max_poly_deg)
@@ -187,9 +225,23 @@ def savgol(data, window=11, max_poly_deg=5, rmsd_threshold=0.02, threshold_absol
             poly_deg -=1
 
     if poly_deg == window-1:
-        return filtered_data(poly_deg)
+        return nan_replacer(filtered_data(poly_deg), nan_index_list)
     else:
-        return filtered_data(poly_deg+1)
+        return nan_replacer(filtered_data(poly_deg+1), nan_index_list)
+
+def savgol_gen(data, window=11, poly_deg=5):
+    '''
+    ### Apply a Savitzky-Golay filter to data
+    # This function only deals with NaN values, no optimization of poly_deg
+    data: list or 1-D array, y-data (floats)
+    window: odd int >=3, length of filter window
+    poly_deg: int, degree of polynomial to fit
+    # Note: if poly_deg is too large the function might break (recommend <= 15)
+    # Personal Note: This is generally better than MA because it does not have a time lag
+    '''
+    data, nan_index_list = nan_remover(data)
+    data = np.array(data)
+    return nan_replacer(scipy.signal.savgol_filter(data, window, poly_deg), nan_index_list)
 
 # Loss Function
 def loss_abs_error(data, function_data):
@@ -246,6 +298,56 @@ def rolling_RMSD(data, window, function_data):
         rmsd_list.insert(0, none_list)
     return np.array(rmsd_list)
 
+def func_dev_upper(data, window, function_data, scaling_factor=1):
+    '''
+    ### Pseudo Upper Bollinger Band
+    # Uses rolling_RMSD function
+    data: list or 1-D array, y-data (floats)
+    window: int, number of points to average over
+    function_data: 1-D array or list, function data to plot (floats)
+    scaling_factor: float, scaling factor for band (default=1)
+    '''
+    function_data = np.array(function_data)
+    moving_dev = np.array(rolling_RMSD(data, window, function_data))
+    diff = abs(len(moving_dev) - len(function_data))
+
+    if len(function_data) < len(moving_dev):
+        moving_dev = moving_dev[diff:]
+    elif len(function_data) > len(moving_dev):
+        function_data = function_data[diff:]
+
+    FDU = function_data + scaling_factor * moving_dev
+    if diff > 0:
+        none_list = [np.NaN] * diff
+        FDU = np.concatenate((none_list, FDU))
+
+    return FDU
+
+def func_dev_lower(data, window, function_data, scaling_factor=1):
+    '''
+    ### Pseudo Lower Bollinger Band
+    # Uses rolling_RMSD function
+    data: list or 1-D array, y-data (floats)
+    window: int, number of points to average over
+    function_data: 1-D array or list, function data to plot (floats)
+    scaling_factor: float, scaling factor for band (default=1)
+    '''
+    function_data = np.array(function_data)
+    moving_dev = np.array(rolling_RMSD(data, window, function_data))
+    diff = abs(len(moving_dev) - len(function_data))
+
+    if len(function_data) < len(moving_dev):
+        moving_dev = moving_dev[diff:]
+    elif len(function_data) > len(moving_dev):
+        function_data = function_data[diff:]
+
+    FDL = function_data - scaling_factor * moving_dev
+    if diff > 0:
+        none_list = [np.NaN] * diff
+        FDL = np.concatenate((none_list, FDL))
+        
+    return FDL
+
 def lin_trend_remover(data, time, window):
     '''
     ### Removes linear trends, both additive and multiplicative
@@ -267,16 +369,7 @@ def stationarity_test(data, split_number=5, absolute=True):
     '''
     data = np.array(data)
 
-    if len(data) % split_number == 0:
-        split_data = np.split(data, split_number)
-    else:
-        split_index = int(np.floor(len(data)/split_number) + (len(data)%split_number))
-        split_data_1, split_data_2 = np.split(data, [split_index])
-        split_data_2 = np.split(split_data_2, split_number - 1)
-        for n in range(split_number-1):
-            split_data_2[n] = np.ndarray.tolist(split_data_2[n])
-        split_data_2.insert(0, split_data_1)
-        split_data = split_data_2
+    split_data = np.array_split(data, split_number)
 
     mean_list = []
     var_list = []
