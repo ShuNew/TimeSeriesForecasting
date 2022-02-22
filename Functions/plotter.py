@@ -17,7 +17,7 @@ for color in range(99):
     RGB = (np.random.random(), np.random.random(), np.random.random())
     color_list.append(RGB)
 
-def lineplotter(PriceData, columns, time_column="timestamp", title="Price Plot", split=False, start="all", end="all", functions=None):
+def lineplotter(PriceData, columns=[], time_column="timestamp", title="Price Plot", split=False, start="all", end="all", functions=None):
     '''
     ### PriceData: pandas DataFrame, at least one column must be time
 

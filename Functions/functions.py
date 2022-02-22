@@ -1,11 +1,23 @@
 import numpy as np
 import pandas as pd
+import talib as ta
 import matplotlib.dates as mdates
 import scipy.signal
 from scipy.optimize import curve_fit 
 import statsmodels.api as sm
+from numba import jit, njit
+from numba import float64
+from numba import int64
+from itertools import (takewhile,repeat)
 
-# NaN Handling
+# CSV Handling
+# Credit: Michael Bacon on Stack Overflow, https://stackoverflow.com/questions/845058/how-to-get-line-count-of-a-large-file-cheaply-in-python
+def CSVlinecount(file):
+    f = open(file, 'rb')
+    bufgen = takewhile(lambda x: x, (f.raw.read(1024*1024) for _ in repeat(None)))
+    return sum( buf.count(b'\n') for buf in bufgen )
+
+# NaN and Array Handling
 def nan_remover(data):
     '''
     ### Removes non-numeric values from list or array of numbers
@@ -34,6 +46,19 @@ def nan_replacer(data, nan_index_list):
         nan_arr = [np.NaN] * len(nan_index_list)
         data = np.insert(data, nan_index_list, nan_arr)
     return data
+
+# Credit: chrisaycock on Stack Overflow; https://stackoverflow.com/questions/30399534/shift-elements-in-a-numpy-array
+def arr_shift(arr, num, fill_value=np.NaN):
+    result = np.empty_like(arr)
+    if num > 0:
+        result[:num] = fill_value
+        result[num:] = arr[:-num]
+    elif num < 0:
+        result[num:] = fill_value
+        result[:num] = arr[-num:]
+    else:
+        result[:] = arr
+    return result
 
 # Math
 def nth_difference(data, n):
@@ -94,7 +119,7 @@ def round_to_increment(data, increment=1, roundtype="down"):
     return data
 
 # Averages & interpolation
-#**************************** These are not necessary, use the pandas-ta package instead **********************************#
+#***These are not necessary, use the pandas-ta or talib packages instead ****#
 def SMA(data, window):
     '''
     ### Simple Moving Average
@@ -110,6 +135,69 @@ def SMA(data, window):
             avg = np.sum(data[(n-window):n]) / window
             m_avg.append(avg)
     return m_avg
+
+# Lag-corrected smoothing
+# These either do not exist or are slow on pandas-ta
+
+# Credit: Alexander McFarlane on Stack Overflow, https://stackoverflow.com/questions/42869495/numpy-version-of-exponential-weighted-moving-average-equivalent-to-pandas-ewm
+@jit((float64[:], int64), nopython=True, nogil=True)
+def fast_EWMA(arr_in, window):
+    """Exponentialy weighted moving average specified by a decay ``window``
+    to provide better adjustments for small windows via:
+
+        y[t] = (x[t] + (1-a)*x[t-1] + (1-a)^2*x[t-2] + ... + (1-a)^n*x[t-n]) /
+               (1 + (1-a) + (1-a)^2 + ... + (1-a)^n).
+
+    Parameters
+    ----------
+    arr_in : np.ndarray, float64
+        A single dimenisional numpy array
+    window : int64
+        The decay window, or 'span'
+
+    Returns
+    -------
+    np.ndarray
+        The EWMA vector, same length / shape as ``arr_in``
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> a = np.arange(5, dtype=float)
+    >>> exp = pd.DataFrame(a).ewm(span=10, adjust=True).mean()
+    >>> np.array_equal(_ewma_infinite_hist(a, 10), exp.values.ravel())
+    True
+    """
+    n = arr_in.shape[0]
+    ewma = np.empty(n, dtype=float64)
+    alpha = 2 / float(window + 1)
+    w = 1
+    ewma_old = arr_in[0]
+    ewma[0] = ewma_old
+    for i in range(1, n):
+        w += (1-alpha)**i
+        ewma_old = ewma_old*(1-alpha) + arr_in[i]
+        ewma[i] = ewma_old / w
+    return ewma
+
+def ZLEMA(data, window=1):
+    '''
+    ### "Zero Lag" Exponential Moving Average
+    data: list or 1-D array, y-data (floats)
+    window: int, number of points to average over
+    weight, float between 0 and 1, weighting for EMA, if left blank it will default to 2/(window + 1)
+    # See https://en.wikipedia.org/wiki/Zero_lag_exponential_moving_average
+    '''
+    data = np.array(data)
+    # data, nan_index = nan_remover(data)
+
+    lag = int(np.floor((window-1)/2))
+    EMA_data = 2*data - arr_shift(data, lag)
+    # ZLEMA_data = fast_EWMA(EMA_data, window)
+    ZLEMA_data = ta.EMA(EMA_data, timeperiod=window)
+    # ZLEMA_data = nan_replacer(EMA_data, nan_index)
+    return ZLEMA_data
+
 
 
 # Curve Fits
@@ -275,6 +363,15 @@ def points_to_time(point_list, start_time, dt):
     pass
 
 # Other
+@njit
+def RMSD_loop(data, window, function_data, rmsd_list):
+    for n in range(len(data)-window):
+        N = n+window
+        moving_sum = np.sum((function_data[n:N] - data[n:N])**2)
+        RMSD = np.sqrt(moving_sum/window)
+        rmsd_list[N] = RMSD
+    return rmsd_list
+
 def rolling_RMSD(data, window, function_data):
     '''
     ### Rolling Root-mean-square deviation of data from function
@@ -284,18 +381,10 @@ def rolling_RMSD(data, window, function_data):
     function_data: 1-D array or list, function data to plot (floats)
     *** Must have len(data) >= len(function_data) ***
     '''
-    diff = len(data) - len(function_data)
-    data = data[diff:]
-
-    rmsd_list = []
-    for n in range(len(data)-window):
-        moving_sum = np.sum((function_data[n:n+window] - data[n:n+window])**2)
-        RMSD = np.sqrt(moving_sum/window)
-        rmsd_list.append(RMSD)
+    rmsd_list = np.empty_like(data)
+    rmsd_list[:] = np.NaN
     
-    if diff > 0:
-        none_list = [None] * diff
-        rmsd_list.insert(0, none_list)
+    rmsd_list = RMSD_loop(data, window, function_data, rmsd_list)
     return np.array(rmsd_list)
 
 def func_dev_upper(data, window, function_data, scaling_factor=1):
@@ -396,3 +485,125 @@ def stationarity_test(data, split_number=5, absolute=True):
     else:
         stdev = np.std(data)
         return mean_std/stdev, var_std/stdev**2, autocorr_diff/len(autocorr_list)
+
+# Modified versions of pandas-ta functions
+
+# Modified from pandas-ta.jma to use numpy arrays (and work with numba)
+@njit
+def jma_loop(m, close, volty, v_sum, sum_length, length1, pow1, bet, beta, pr, kv, det0, det1, ma2, jma, ma1, uBand, lBand):
+    for i in range(1, m):
+        price = close[i]
+
+        # Price volatility
+        del1 = price - uBand
+        del2 = price - lBand
+        volty[i] = max(abs(del1),abs(del2)) if abs(del1)!=abs(del2) else 0
+
+        # Relative price volatility factor
+        v_sum[i] = v_sum[i - 1] + (volty[i] - volty[max(i - sum_length, 0)]) / sum_length
+        avg_volty = np.mean(v_sum[max(i - 65, 0):i + 1])
+        d_volty = 0 if avg_volty ==0 else volty[i] / avg_volty
+        r_volty = max(1.0, min(np.power(length1, 1 / pow1), d_volty))
+
+        # Jurik volatility bands
+        pow2 = np.power(r_volty, pow1)
+        kv = np.power(bet, np.sqrt(pow2))
+        uBand = price if (del1 > 0) else price - (kv * del1)
+        lBand = price if (del2 < 0) else price - (kv * del2)
+
+        # Jurik Dynamic Factor
+        power = np.power(r_volty, pow1)
+        alpha = np.power(beta, power)
+
+        # 1st stage - prelimimary smoothing by adaptive EMA
+        ma1 = ((1 - alpha) * price) + (alpha * ma1)
+
+        # 2nd stage - one more prelimimary smoothing by Kalman filter
+        det0 = ((price - ma1) * (1 - beta)) + (beta * det0)
+        ma2 = ma1 + pr * det0
+
+        # 3rd stage - final smoothing by unique Jurik adaptive filter
+        det1 = ((ma2 - jma[i - 1]) * (1 - alpha) * (1 - alpha)) + (alpha * alpha * det1)
+        jma[i] = jma[i-1] + det1
+    return jma
+
+def jma(close, length=None, phase=0.0, offset=None, **kwargs):
+    """Indicator: Jurik Moving Average (JMA)"""
+    # Validate Arguments
+    _length = int(length) if length and length > 0 else 7
+    close = close if len(close) > _length else None
+    try:
+        offset = int(offset)
+    except:
+        offset = 0
+    if close is None: return
+
+    # Define base variables
+    jma = np.zeros_like(close)
+    volty = np.zeros_like(close)
+    v_sum = np.zeros_like(close)
+
+    kv = det0 = det1 = ma2 = 0.0
+    jma[0] = ma1 = uBand = lBand = close[0]
+
+    # Static variables
+    sum_length = 10
+    length = 0.5 * (_length - 1)
+    pr = 0.5 if phase < -100 else 2.5 if phase > 100 else 1.5 + phase * 0.01
+    length1 = max((np.log(np.sqrt(length)) / np.log(2.0)) + 2.0, 0)
+    pow1 = max(length1 - 2.0, 0.5)
+    length2 = length1 * np.sqrt(length)
+    bet = length2 / (length2 + 1)
+    beta = 0.45 * (_length - 1) / (0.45 * (_length - 1) + 2.0)
+
+    m = close.shape[0]
+    jma = jma_loop(m, close, volty, v_sum, sum_length, length1, pow1, bet, beta, pr, kv, det0, det1, ma2, jma, ma1, uBand, lBand)
+
+    # Remove initial lookback data and convert to pandas frame
+    jma[0:_length - 1] = np.NaN
+
+    # Offset
+    if offset != 0:
+        jma = arr_shift(jma, offset)
+
+    # # Handle fills
+    # if "fillna" in kwargs:
+    #     jma.fillna(kwargs["fillna"], inplace=True)
+    # if "fill_method" in kwargs:
+    #     jma.fillna(method=kwargs["fill_method"], inplace=True)
+
+    # # Name & Category
+    # jma.name = f"JMA_{_length}_{phase}"
+    # jma.category = "overlap"
+
+    return np.array(jma)
+
+
+jma.__doc__ = \
+"""Jurik Moving Average Average (JMA)
+
+Mark Jurik's Moving Average (JMA) attempts to eliminate noise to see the "true"
+underlying activity. It has extremely low lag, is very smooth and is responsive
+to market gaps.
+
+Sources:
+    https://c.mql5.com/forextsd/forum/164/jurik_1.pdf
+    https://www.prorealcode.com/prorealtime-indicators/jurik-volatility-bands/
+
+Calculation:
+    Default Inputs:
+        length=7, phase=0
+
+Args:
+    close (pd.Series): Series of 'close's
+    length (int): Period of calculation. Default: 7
+    phase (float): How heavy/light the average is [-100, 100]. Default: 0
+    offset (int): How many lengths to offset the result. Default: 0
+
+Kwargs:
+    fillna (value, optional): pd.DataFrame.fillna(value)
+    fill_method (value, optional): Type of fill method
+
+Returns:
+    pd.Series: New feature generated.
+"""
